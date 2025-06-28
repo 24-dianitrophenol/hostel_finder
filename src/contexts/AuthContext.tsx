@@ -1,60 +1,154 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
-import { User } from '../types';
-import { currentUser as mockUser } from '../data/mockData';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { User } from '@supabase/supabase-js';
+import { auth, db } from '../lib/supabase';
+import type { Database } from '../lib/database.types';
+
+type Profile = Database['public']['Tables']['profiles']['Row'];
+
+interface AuthUser extends User {
+  profile?: Profile;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
+  profile: Profile | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string, role?: 'owner' | 'broker' | 'student') => Promise<void>;
-  loginBroker: (password: string) => Promise<void>;
-  logout: () => void;
-  register: (userData: Partial<User>, password: string) => Promise<void>;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (userData: RegisterData, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  updateProfile: (updates: Partial<Profile>) => Promise<void>;
+}
+
+interface RegisterData {
+  name: string;
+  email: string;
+  phone?: string;
+  university?: string;
+  role: 'user' | 'owner' | 'admin';
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
   const isAuthenticated = !!user;
 
-  // Mock login function
-  const login = async (email: string, password: string, role: 'owner' | 'broker' | 'student' = 'student') => {
-    // In a real app, this would call an API
-    if (email && password) {
-      setUser({ ...mockUser, role });
-    } else {
-      throw new Error('Invalid credentials');
+  useEffect(() => {
+    // Get initial session
+    const getInitialSession = async () => {
+      try {
+        const currentUser = await auth.getCurrentUser();
+        if (currentUser) {
+          setUser(currentUser);
+          setProfile(currentUser.profile);
+        }
+      } catch (error) {
+        console.error('Error getting initial session:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    getInitialSession();
+
+    // Listen for auth changes
+    const { data: { subscription } } = auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        try {
+          const userProfile = await db.profiles.getById(session.user.id);
+          const authUser = { ...session.user, profile: userProfile };
+          setUser(authUser);
+          setProfile(userProfile);
+        } catch (error) {
+          console.error('Error fetching user profile:', error);
+          setUser(session.user);
+          setProfile(null);
+        }
+      } else {
+        setUser(null);
+        setProfile(null);
+      }
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const login = async (email: string, password: string) => {
+    setIsLoading(true);
+    try {
+      const { user: authUser } = await auth.signIn(email, password);
+      if (authUser) {
+        const userProfile = await db.profiles.getById(authUser.id);
+        setUser({ ...authUser, profile: userProfile });
+        setProfile(userProfile);
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Mock broker login function (password only)
-  const loginBroker = async (password: string) => {
-    // In a real app, this would call an API and verify password
-    const brokerPassword = 'broker123'; // Example fixed password
-    if (password === brokerPassword) {
-      setUser({ ...mockUser, role: 'broker' });
-    } else {
-      throw new Error('Invalid password');
+  const register = async (userData: RegisterData, password: string) => {
+    setIsLoading(true);
+    try {
+      await auth.signUp(userData.email, password, {
+        full_name: userData.name,
+        role: userData.role,
+        phone_number: userData.phone
+      });
+    } catch (error) {
+      console.error('Registration error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Mock logout function
-  const logout = () => {
-    setUser(null);
+  const logout = async () => {
+    setIsLoading(true);
+    try {
+      await auth.signOut();
+      setUser(null);
+      setProfile(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // Mock register function
-  const register = async (userData: Partial<User>, password: string) => {
-    // In a real app, this would call an API
-    if (userData.email && password) {
-      setUser({ ...mockUser, ...userData, id: Date.now().toString() });
-    } else {
-      throw new Error('Invalid user data');
+  const updateProfile = async (updates: Partial<Profile>) => {
+    if (!user) throw new Error('No user logged in');
+    
+    try {
+      const updatedProfile = await db.profiles.update(user.id, updates);
+      setProfile(updatedProfile);
+      setUser({ ...user, profile: updatedProfile });
+    } catch (error) {
+      console.error('Profile update error:', error);
+      throw error;
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, loginBroker, logout, register }}>
+    <AuthContext.Provider value={{
+      user,
+      profile,
+      isAuthenticated,
+      isLoading,
+      login,
+      register,
+      logout,
+      updateProfile
+    }}>
       {children}
     </AuthContext.Provider>
   );

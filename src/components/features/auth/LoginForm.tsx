@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { User, Lock, Mail, ArrowRight } from 'lucide-react';
+import { User, Lock, Mail, ArrowRight, Loader } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
 import Button from '../../ui/Button';
@@ -11,21 +11,30 @@ const LoginForm = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
-  const { login, isAuthenticated, user } = useAuth();
+  const { login, isAuthenticated, profile, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (isAuthenticated && user) {
-      if (user.role === 'owner') {
-        navigate('/hostel-owner', { replace: true });
-      } else if (user.role === 'broker') {
-        navigate('/hostel-broker', { replace: true });
+    if (isAuthenticated && profile && !authLoading) {
+      // Redirect based on user role and current path
+      if (location.pathname.includes('/hostel-owner')) {
+        if (profile.role === 'owner') {
+          navigate('/hostel-owner', { replace: true });
+        } else {
+          setError('Access denied. Owner account required.');
+        }
+      } else if (location.pathname.includes('/hostel-broker')) {
+        if (profile.role === 'admin') {
+          navigate('/hostel-broker', { replace: true });
+        } else {
+          setError('Access denied. Broker account required.');
+        }
       } else {
         navigate('/dashboard', { replace: true });
       }
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [isAuthenticated, profile, authLoading, navigate, location.pathname]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,21 +42,21 @@ const LoginForm = () => {
     setIsLoading(true);
     
     try {
-      let userRole: 'owner' | 'broker' | 'student' = 'student';
-      if (location.pathname.includes('/hostel-owner')) {
-        userRole = 'owner';
-      } else if (location.pathname.includes('/hostel-broker')) {
-        userRole = 'broker';
-      }
-
-      await login(email, password, userRole);
-      // Navigation is now handled by the useEffect hook
-    } catch (err) {
-      setError('Invalid email or password');
+      await login(email, password);
+    } catch (err: any) {
+      setError(err.message || 'Invalid email or password');
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full flex items-center justify-center">
+        <Loader className="h-8 w-8 animate-spin text-primary-900" />
+      </div>
+    );
+  }
 
   return (
     <motion.div 
@@ -61,11 +70,14 @@ const LoginForm = () => {
           <User className="h-8 w-8" />
         </div>
         <h2 className="text-2xl font-display font-bold">
-          {location.pathname === '/hostel-owner/login' ? 'Owner Login' : 'Login'}
+          {location.pathname.includes('/hostel-owner') ? 'Owner Login' : 
+           location.pathname.includes('/hostel-broker') ? 'Broker Login' : 'Login'}
         </h2>
         <p className="text-gray-600 mt-2">
-          {location.pathname === '/hostel-owner/login'
+          {location.pathname.includes('/hostel-owner')
             ? 'Sign in to your hostel owner account'
+            : location.pathname.includes('/hostel-broker')
+            ? 'Sign in to your broker account'
             : 'Sign in to your account'}
         </p>
       </div>
@@ -93,6 +105,7 @@ const LoginForm = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={isLoading}
             />
           </div>
         </div>
@@ -102,7 +115,7 @@ const LoginForm = () => {
             <label htmlFor="password" className="block text-gray-700 text-sm font-medium">
               Password
             </label>
-            {location.pathname !== '/hostel-owner/login' && (
+            {!location.pathname.includes('/hostel-owner') && !location.pathname.includes('/hostel-broker') && (
               <a href="#" className="text-sm text-primary-900 hover:text-primary-700">
                 Forgot password?
               </a>
@@ -120,6 +133,7 @@ const LoginForm = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={isLoading}
             />
           </div>
         </div>
@@ -128,7 +142,7 @@ const LoginForm = () => {
           variant="primary"
           fullWidth
           size="lg"
-          icon={<ArrowRight className="h-5 w-5" />}
+          icon={isLoading ? <Loader className="h-5 w-5 animate-spin" /> : <ArrowRight className="h-5 w-5" />}
           iconPosition="right"
           disabled={isLoading}
           className="mb-4"
@@ -136,19 +150,22 @@ const LoginForm = () => {
           {isLoading ? 'Signing in...' : 'Sign in'}
         </Button>
         
-        {location.pathname !== '/hostel-owner/login' && (
-          <p className="text-center text-gray-600 mt-6">
-            Don't have an account?{' '}
-            <Link to="/signup" className="text-primary-900 hover:underline font-medium">
-              Sign up
-            </Link>
-          </p>
-        )}
-        {location.pathname === '/hostel-owner/login' && (
+        {location.pathname.includes('/hostel-owner') ? (
           <p className="text-center text-gray-600 mt-6">
             Don't have an owner account?{' '}
             <Link to="/hostel-owner/signup" className="text-primary-900 hover:underline font-medium">
               Sign up as owner
+            </Link>
+          </p>
+        ) : location.pathname.includes('/hostel-broker') ? (
+          <p className="text-center text-gray-600 mt-6">
+            Contact admin for broker account access
+          </p>
+        ) : (
+          <p className="text-center text-gray-600 mt-6">
+            Don't have an account?{' '}
+            <Link to="/signup" className="text-primary-900 hover:underline font-medium">
+              Sign up
             </Link>
           </p>
         )}

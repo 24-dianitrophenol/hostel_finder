@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { UserPlus, Mail, Lock, User, Phone, School, ArrowRight } from 'lucide-react';
+import { UserPlus, Mail, Lock, User, Phone, School, ArrowRight, Loader } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
 import Button from '../../ui/Button';
@@ -15,26 +15,26 @@ const SignupForm = () => {
     university: '',
     password: '',
     confirmPassword: '',
-    role: 'student' as 'student' | 'owner' | 'broker'
+    role: 'user' as 'user' | 'owner' | 'admin'
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   
-  const { register, isAuthenticated, user } = useAuth();
+  const { register, isAuthenticated, profile, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (isAuthenticated && user) {
-      if (user.role === 'owner') {
+    if (isAuthenticated && profile && !authLoading) {
+      if (profile.role === 'owner') {
         navigate('/hostel-owner', { replace: true });
-      } else if (user.role === 'broker') {
+      } else if (profile.role === 'admin') {
         navigate('/hostel-broker', { replace: true });
       } else {
         navigate('/dashboard', { replace: true });
       }
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [isAuthenticated, profile, authLoading, navigate]);
 
   // Set role based on the current route
   useEffect(() => {
@@ -64,8 +64,7 @@ const SignupForm = () => {
     else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
     
     if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (!formData.role) newErrors.role = 'Role is required';
-    if (formData.role === 'student' && !formData.university) newErrors.university = 'University is required';
+    if (formData.role === 'user' && !formData.university) newErrors.university = 'University is required';
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -84,7 +83,8 @@ const SignupForm = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleNextStep = () => {
+  const handleNextStep = (e: React.FormEvent) => {
+    e.preventDefault();
     if (validateStep1()) {
       setStep(2);
     }
@@ -111,13 +111,20 @@ const SignupForm = () => {
         }, 
         formData.password
       );
-      // Navigation is now handled by the useEffect hook
-    } catch (err) {
-      setErrors({ submit: 'Failed to create account' });
+    } catch (err: any) {
+      setErrors({ submit: err.message || 'Failed to create account' });
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full flex items-center justify-center">
+        <Loader className="h-8 w-8 animate-spin text-primary-900" />
+      </div>
+    );
+  }
 
   return (
     <motion.div 
@@ -188,6 +195,7 @@ const SignupForm = () => {
                   placeholder="Your full name"
                   value={formData.name}
                   onChange={(e) => updateFormData('name', e.target.value)}
+                  disabled={isLoading}
                 />
                 {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
               </div>
@@ -208,6 +216,7 @@ const SignupForm = () => {
                   placeholder="your.email@example.com"
                   value={formData.email}
                   onChange={(e) => updateFormData('email', e.target.value)}
+                  disabled={isLoading}
                 />
                 {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
               </div>
@@ -228,6 +237,7 @@ const SignupForm = () => {
                   placeholder="Your phone number"
                   value={formData.phone}
                   onChange={(e) => updateFormData('phone', e.target.value)}
+                  disabled={isLoading}
                 />
                 {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
               </div>
@@ -242,17 +252,16 @@ const SignupForm = () => {
                   id="role"
                   className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-900 focus:border-transparent"
                   value={formData.role}
-                  onChange={(e) => updateFormData('role', e.target.value as 'student' | 'owner' | 'broker')}
+                  onChange={(e) => updateFormData('role', e.target.value as 'user' | 'owner' | 'admin')}
+                  disabled={isLoading}
                 >
-                  <option value="student">Student</option>
+                  <option value="user">Student</option>
                   <option value="owner">Hostel Owner</option>
-                  <option value="broker">Hostel Broker</option>
                 </select>
-                {errors.role && <p className="text-red-500 text-xs mt-1">{errors.role}</p>}
               </div>
             )}
             
-            {formData.role === 'student' && (
+            {formData.role === 'user' && (
               <div className="mb-6">
                 <label htmlFor="university" className="block text-gray-700 text-sm font-medium mb-2">
                   University
@@ -266,6 +275,7 @@ const SignupForm = () => {
                     className="pl-10 w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-900 focus:border-transparent"
                     value={formData.university}
                     onChange={(e) => updateFormData('university', e.target.value)}
+                    disabled={isLoading}
                   >
                     <option value="">Select your university</option>
                     {universities.map((uni) => (
@@ -285,7 +295,7 @@ const SignupForm = () => {
               size="lg"
               icon={<ArrowRight className="h-5 w-5" />}
               iconPosition="right"
-              onClick={handleNextStep}
+              disabled={isLoading}
             >
               Continue
             </Button>
@@ -310,6 +320,7 @@ const SignupForm = () => {
                   placeholder="Create a strong password"
                   value={formData.password}
                   onChange={(e) => updateFormData('password', e.target.value)}
+                  disabled={isLoading}
                 />
                 {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
               </div>
@@ -330,6 +341,7 @@ const SignupForm = () => {
                   placeholder="Confirm your password"
                   value={formData.confirmPassword}
                   onChange={(e) => updateFormData('confirmPassword', e.target.value)}
+                  disabled={isLoading}
                 />
                 {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
               </div>
@@ -341,6 +353,7 @@ const SignupForm = () => {
                 fullWidth
                 size="lg"
                 onClick={handlePrevStep}
+                disabled={isLoading}
               >
                 Back
               </Button>
@@ -349,7 +362,7 @@ const SignupForm = () => {
                 variant="primary"
                 fullWidth
                 size="lg"
-                icon={<ArrowRight className="h-5 w-5" />}
+                icon={isLoading ? <Loader className="h-5 w-5 animate-spin" /> : <ArrowRight className="h-5 w-5" />}
                 iconPosition="right"
                 disabled={isLoading}
               >
